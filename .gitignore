@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地配置与密钥（不要提交）
+config.json
+
+# 浏览器登录/验证状态，含平台 Cookie
+browser-profile/
+
+# 抓取输出数据（含评论者昵称等个人信息，且体积大）
+out/
+
+# 日志
+*.log
+
+# IDE / 系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
