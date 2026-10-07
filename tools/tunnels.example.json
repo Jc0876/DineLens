@@ -1,0 +1,12 @@
+{
+  "active": "example",
+  "profiles": {
+    "example": {
+      "tunnel": "example-tunnel",
+      "credentials_file": "C:\\Users\\<you>\\.cloudflared\\<tunnel-id>.json",
+      "hostname": "app.example.com",
+      "port": 8000,
+      "edge_ip_version": 4
+    }
+  }
+}

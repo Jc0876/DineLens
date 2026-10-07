@@ -21,3 +21,10 @@ out/
 .idea/
 .DS_Store
 Thumbs.db
+
+# tools 本地档案与状态（个人隧道/账号信息，不上传）
+tools/tunnels.json
+tools/services.json
+tools/tunnel_state.json
+tools/configs/
+tools/启动 Tunnel 管理器.bat
