@@ -101,7 +101,7 @@ Real account credentials (`cert.pem`, `<tunnel-id>.json`) are created by `cloudf
 | Action buttons | Start / Stop / Restart / end-to-end self-check / open public URL |
 | Guard mode | when checked, checks every 4 s and automatically restarts the tunnel if it drops |
 | Tunnel profiles (accounts) | switch profile, log in to an account, create a tunnel, route DNS |
-| Local service | pick a preset service or type a custom port; one click switches the profile's target port (config is regenerated), with an optional restart to apply |
+| Local service | pick a preset service or type a custom port and click switch to point the tunnel at it; the preset start command is shown below; **Start local service / Stop local service** buttons run that command or stop the process listening on the port |
 | Tunnel settings | edge IP version (auto / IPv4 / IPv6); takes effect after a restart |
 | Log area | live view of `tunnel.log`, auto-refresh toggle |
 
@@ -118,6 +118,8 @@ python tunnel.py switch 8000     :: switch the local service port
 python tunnel.py logs 80         :: show the last 80 log lines
 python tunnel.py watch           :: guard mode (auto reconnect)
 python tunnel.py open            :: open the public URL in a browser
+python tunnel.py start-local     :: start the local service using the preset start_cmd
+python tunnel.py stop-local      :: stop the process listening on the active profile's port
 
 python tunnel.py profiles        :: list tunnel profiles
 python tunnel.py use <name>      :: switch the active profile

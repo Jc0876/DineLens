@@ -27,4 +27,5 @@ tools/tunnels.json
 tools/services.json
 tools/tunnel_state.json
 tools/configs/
+tools/web-test/
 tools/启动 Tunnel 管理器.bat

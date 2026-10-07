@@ -13,6 +13,8 @@ DineLens Tunnel Manager（多档案版）
   python tunnel.py logs [行数]     查看隧道日志
   python tunnel.py watch          守护模式（断线自动重连）
   python tunnel.py open           浏览器打开公网地址
+  python tunnel.py start-local    启动本地服务（执行 services.json 里的 start_cmd）
+  python tunnel.py stop-local     停止监听当前档案端口的本地服务
   python tunnel.py profiles       列出隧道档案
   python tunnel.py use <档案名>    切换隧道档案
   python tunnel.py login          登录/切换 Cloudflare 账号（浏览器授权）
@@ -48,7 +50,7 @@ DEFAULT_SERVICES = [
     {"name": "通用 Node 服务 (3000)", "port": 3000, "start_cmd": ""},
 ]
 
-DEFAULT_STATE = {"last_pid": None}
+DEFAULT_STATE = {"last_pid": None, "local_pid": None}
 
 DETACHED = 0x00000008
 NEW_GROUP = 0x00000200
@@ -205,17 +207,18 @@ def find_tunnel_pids():
     return [int(x) for x in re.findall(r"\d+", out)]
 
 
-def is_pid_alive(pid):
+def is_tunnel_pid_alive(pid):
     if not pid:
         return False
-    out = run_quiet(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
+    out = run_quiet(["tasklist", "/FI", f"PID eq {pid}", "/FI",
+                     "IMAGENAME eq cloudflared.exe", "/NH"])
     return str(pid) in out
 
 
 def tunnel_running():
     if find_tunnel_pids():
         return True
-    return is_pid_alive(load_state().get("last_pid"))
+    return is_tunnel_pid_alive(load_state().get("last_pid"))
 
 
 def read_config_port():
@@ -231,6 +234,66 @@ def port_listening(port, host="127.0.0.1", timeout=2):
             return True
     except OSError:
         return False
+
+
+def find_listen_pids(port):
+    out = run_quiet([
+        "powershell.exe", "-NoProfile", "-Command",
+        f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
+        "Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique",
+    ])
+    return sorted({int(x) for x in re.findall(r"\d+", out)})
+
+
+def process_name(pid):
+    out = run_quiet(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"])
+    match = re.match(r'"([^"]+)"', out.strip())
+    return match.group(1) if match else ""
+
+
+def start_local_service(service):
+    port = (service or {}).get("port")
+    cmd = ((service or {}).get("start_cmd") or "").strip()
+    if not port or not cmd:
+        print("该服务没有配置 start_cmd，无法自动启动")
+        return False
+    if port_listening(port):
+        print(f"localhost:{port} 已有服务在监听")
+        return True
+    print(f"启动本地服务: {cmd}")
+    subprocess.Popen(cmd, shell=True, creationflags=DETACHED | NEW_GROUP, cwd=str(BASE))
+    for _ in range(8):
+        time.sleep(1)
+        if port_listening(port):
+            break
+    pids = find_listen_pids(port)
+    state = load_state()
+    state["local_pid"] = pids[0] if pids else None
+    save_state(state)
+    ok = port_listening(port)
+    print(f"本地服务{'已启动' if ok else '启动失败'} (localhost:{port})")
+    return ok
+
+
+def stop_local_service(port=None):
+    port = port or read_config_port()
+    if not port:
+        print("没有可用的端口")
+        return False
+    pids = find_listen_pids(port)
+    if not pids:
+        print(f"localhost:{port} 没有服务在监听")
+        return False
+    state = load_state()
+    tracked = state.get("local_pid")
+    targets = [tracked] if tracked in pids else pids
+    for pid in targets:
+        name = process_name(pid)
+        run_quiet(["taskkill", "/PID", str(pid), "/F"])
+        print(f"已停止本地服务: PID {pid} ({name})")
+    state["local_pid"] = None
+    save_state(state)
+    return True
 
 
 def http_check(url, timeout=20):
@@ -338,7 +401,7 @@ def stop_tunnel():
     pids = find_tunnel_pids()
     if not pids:
         state = load_state()
-        if is_pid_alive(state.get("last_pid")):
+        if is_tunnel_pid_alive(state.get("last_pid")):
             pids = [state["last_pid"]]
     if not pids:
         print("隧道未在运行")
@@ -366,7 +429,7 @@ def show_status():
         print(f"隧道 / 域名      : {profile.get('tunnel')} / {profile.get('hostname') or '未设置'}")
         print(f"边缘 IP 版本     : {'自动' if edge not in (4, 6) else f'IPv{edge}'}")
     pids = find_tunnel_pids()
-    running = bool(pids) or is_pid_alive(load_state().get("last_pid"))
+    running = bool(pids) or is_tunnel_pid_alive(load_state().get("last_pid"))
     print(f"隧道进程         : {'运行中 PID ' + ', '.join(map(str, pids)) if running else '未运行'}")
     port = read_config_port()
     print(f"本地服务端口     : {port or '未配置'}")
@@ -728,6 +791,17 @@ def main():
         guard_mode()
     elif cmd == "open":
         open_public()
+    elif cmd == "start-local":
+        port = read_config_port()
+        services = load_services()
+        target = next((s for s in services if s.get("port") == port and s.get("start_cmd")), None)
+        target = target or next((s for s in services if s.get("start_cmd")), None)
+        if target:
+            start_local_service(target)
+        else:
+            print("services.json 里没有配置 start_cmd 的服务")
+    elif cmd == "stop-local":
+        stop_local_service()
     elif cmd == "profiles":
         list_profiles()
     elif cmd == "use" and len(args) > 1:

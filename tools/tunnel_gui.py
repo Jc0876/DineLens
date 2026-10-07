@@ -122,16 +122,29 @@ class TunnelApp:
 
         service = tk.LabelFrame(self.root, text=" 本地服务（当前档案指向的端口） ", bg=BG, padx=10, pady=8)
         service.pack(fill="x", padx=14, pady=6)
+        service_row = tk.Frame(service, bg=BG)
+        service_row.pack(fill="x")
         self.service_combo = ttk.Combobox(
-            service, state="readonly", width=42, textvariable=self.service_var,
+            service_row, state="readonly", width=42, textvariable=self.service_var,
             values=[f"{s['name']}  →  localhost:{s['port']}" for s in self.services])
         self.service_combo.pack(side="left")
+        self.service_combo.bind("<<ComboboxSelected>>", lambda _e: self.update_cmd_label())
         self.select_current_service()
-        tk.Entry(service, textvariable=self.port_var, width=8).pack(side="left", padx=8)
-        tk.Label(service, text="自定义端口", bg=BG, fg=COLOR_MUTED,
+        tk.Entry(service_row, textvariable=self.port_var, width=8).pack(side="left", padx=8)
+        tk.Label(service_row, text="自定义端口", bg=BG, fg=COLOR_MUTED,
                  font="{Microsoft YaHei UI} 9").pack(side="left")
-        tk.Button(service, text="切换并生效", command=self.on_switch_service,
+        tk.Button(service_row, text="切换并生效", command=self.on_switch_service,
                   font="{Microsoft YaHei UI} 9").pack(side="right")
+        service_row2 = tk.Frame(service, bg=BG)
+        service_row2.pack(fill="x", pady=(6, 0))
+        self.cmd_label = tk.Label(service_row2, text="启动命令: -", bg=BG, fg=COLOR_MUTED,
+                                  font="{Microsoft YaHei UI} 9", anchor="w")
+        self.cmd_label.pack(side="left", fill="x", expand=True)
+        tk.Button(service_row2, text="停止本地服务", command=self.on_stop_local,
+                  font="{Microsoft YaHei UI} 9").pack(side="right")
+        tk.Button(service_row2, text="启动本地服务", command=self.on_start_local,
+                  font="{Microsoft YaHei UI} 9").pack(side="right", padx=6)
+        self.update_cmd_label()
 
         settings = tk.LabelFrame(self.root, text=" 隧道设置（重启后生效） ", bg=BG, padx=10, pady=8)
         settings.pack(fill="x", padx=14, pady=6)
@@ -267,7 +280,7 @@ class TunnelApp:
                 port, code, elapsed = result["local"]
                 lines.append(f"本地  127.0.0.1:{port}  HTTP {code if code else '失败'}（{elapsed:.2f}s）")
             else:
-                lines.append("本地服务未监听（启动你的 Web 服务后再测）")
+                lines.append("本地服务未监听（可点“启动本地服务”按钮）")
             if not result["url"]:
                 lines.append("未配置域名，先创建档案")
             elif result["code"]:
@@ -316,13 +329,69 @@ class TunnelApp:
         self.set_status(f"档案 {name} 已指向 localhost:{port}")
         if start_cmd and not core.port_listening(port):
             if messagebox.askyesno("启动本地服务", f"本地 {port} 端口未监听，是否运行预设命令？\n\n{start_cmd}"):
-                subprocess.Popen(start_cmd, shell=True, cwd=str(core.BASE),
-                                 creationflags=core.DETACHED | core.NEW_GROUP)
-                self.set_status("已启动本地服务")
+                self.bg(lambda: core.start_local_service({"port": port, "start_cmd": start_cmd}),
+                        lambda _r, _e: self.refresh_fast_async())
         self.refresh_fast_async()
         if core.tunnel_running():
             if messagebox.askyesno("重启隧道", "切换已保存，需要重启隧道才能让新端口生效。现在重启？"):
                 self.on_restart()
+
+    def update_cmd_label(self):
+        idx = self.service_combo.current()
+        if 0 <= idx < len(self.services):
+            cmd = self.services[idx].get("start_cmd") or "(未配置启动命令)"
+        else:
+            cmd = "-"
+        if len(cmd) > 78:
+            cmd = cmd[:75] + "..."
+        self.cmd_label.config(text="启动命令: " + cmd)
+
+    def selected_service(self):
+        services = core.load_services()
+        idx = self.service_combo.current()
+        if 0 <= idx < len(services):
+            return services[idx]
+        return None
+
+    def on_start_local(self):
+        if self.busy:
+            return
+        svc = self.selected_service()
+        if not svc:
+            messagebox.showwarning("启动本地服务", "请先在下拉框选择一个服务")
+            return
+        if core.port_listening(svc["port"]):
+            messagebox.showinfo("启动本地服务", f"localhost:{svc['port']} 已在监听")
+            return
+        if not svc.get("start_cmd"):
+            messagebox.showwarning("启动本地服务", "该服务没有配置 start_cmd，请编辑 services.json")
+            return
+        self.set_busy(True, "启动本地服务中...")
+        def done(result, error):
+            self.set_busy(False, "本地服务已启动" if result else "本地服务启动失败")
+            self.refresh_fast_async()
+        self.bg(lambda: core.start_local_service(svc), done)
+
+    def on_stop_local(self):
+        if self.busy:
+            return
+        port = core.read_config_port()
+        if not port:
+            messagebox.showwarning("停止本地服务", "当前档案没有配置端口")
+            return
+        pids = core.find_listen_pids(port)
+        if not pids:
+            messagebox.showinfo("停止本地服务", f"localhost:{port} 当前没有服务在监听")
+            return
+        details = "\n".join(f"PID {pid}  ({core.process_name(pid) or '未知进程'})" for pid in pids)
+        if not messagebox.askyesno("停止本地服务",
+                                   f"将强制结束监听 {port} 端口的进程：\n\n{details}\n\n确定吗？"):
+            return
+        self.set_busy(True, "停止本地服务中...")
+        def done(result, error):
+            self.set_busy(False, "本地服务已停止" if result else "停止失败")
+            self.refresh_fast_async()
+        self.bg(lambda: core.stop_local_service(port), done)
 
     def on_save_settings(self):
         name, profile = core.active_profile()
@@ -406,7 +475,7 @@ class TunnelApp:
         self.fast_busy = True
         def work():
             pids = core.find_tunnel_pids()
-            running = bool(pids) or core.is_pid_alive(core.load_state().get("last_pid"))
+            running = bool(pids) or core.is_tunnel_pid_alive(core.load_state().get("last_pid"))
             name, profile = core.active_profile()
             if not pids and running:
                 pids = [core.load_state().get("last_pid")]
