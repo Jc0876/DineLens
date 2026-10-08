@@ -58,7 +58,7 @@ DEFAULT_DEPLOY = {
     "repo_dir": str(BASE.parent),
     "web_dir": "web",
     "branch": "main",
-    "pages_project": "dinelens",
+    "pages_project": "my-pages-project",
     "pages_url": "",
     "mode": "git",
 }

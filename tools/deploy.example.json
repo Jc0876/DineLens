@@ -2,7 +2,7 @@
   "repo_dir": "C:\\Users\\<you>\\Desktop\\DineLens",
   "web_dir": "web",
   "branch": "main",
-  "pages_project": "dinelens",
-  "pages_url": "https://dinelens.pages.dev",
+  "pages_project": "my-pages-project",
+  "pages_url": "https://my-pages-project.pages.dev",
   "mode": "git"
 }
