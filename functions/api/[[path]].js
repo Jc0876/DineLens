@@ -15,8 +15,14 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const target = new URL(path + url.search, backend.replace(/\/+$/, "") + "/");
 
+  const proxied = new Request(target.toString(), request);
+  if (env.CF_ACCESS_CLIENT_ID && env.CF_ACCESS_CLIENT_SECRET) {
+    proxied.headers.set("CF-Access-Client-Id", env.CF_ACCESS_CLIENT_ID);
+    proxied.headers.set("CF-Access-Client-Secret", env.CF_ACCESS_CLIENT_SECRET);
+  }
+
   try {
-    const resp = await fetch(target.toString(), request);
+    const resp = await fetch(proxied);
     return new Response(resp.body, resp);
   } catch (err) {
     return new Response(

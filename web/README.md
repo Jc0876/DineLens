@@ -43,11 +43,17 @@ DineLens/
 
 - The backend address is **not hardcoded**: the function reads the `BACKEND_URL`
   environment variable (Pages → Settings → Environment variables), e.g.
-  `BACKEND_URL = https://your-tunnel-host.example.com`. Set it for Production *and* Preview if
-  you use preview deployments. Changing an environment variable requires a new
-  deployment to take effect.
+  `BACKEND_URL = https://your-tunnel-host.example.com`. Set it for Production *and*
+  Preview if you use preview deployments. Changing an environment variable requires
+  a new deployment to take effect.
 - If `BACKEND_URL` is missing, `/api/*` returns
   `500 {"error":"backend_not_configured"}` instead of failing silently.
+- **Optional (recommended): protect the backend hostname with Cloudflare Access.**
+  Create a Zero Trust **service token** and an Access application on the backend
+  hostname with a *Service Auth* policy (deny everyone else). Store the token in two
+  more environment variables, `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`;
+  the function attaches them to the proxied request so only it can pass. Direct
+  browser visits to the backend hostname are then blocked by Cloudflare.
 - The real application will call endpoints like `/api/analyze` (FastAPI backend);
   the frontend uses relative paths (`/api/...`) and does not need to know about
   the tunnel at all.
