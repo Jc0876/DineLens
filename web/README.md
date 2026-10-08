@@ -13,12 +13,17 @@ backend (`dinelens.ccwu.cc`), so:
 ## Layout
 
 ```
-web/
-├── index.html                  # placeholder frontend (replace with the real app)
-└── functions/
-    └── api/
-        └── [[path]].js         # /api/*  ->  https://dinelens.ccwu.cc/*
+DineLens/
+├── functions/                  # MUST be at the repository root (not inside web/)
+│   └── api/
+│       └── [[path]].js         # /api/*  ->  https://dinelens.ccwu.cc/*
+└── web/                        # Pages build output directory
+    └── index.html              # placeholder frontend (replace with the real app)
 ```
+
+> Cloudflare requirement: the `/functions` directory lives at the **root of the
+> Pages project**, not inside the build output directory. The Pages build setting
+> keeps `Build output directory: web`.
 
 ## Deploy
 
