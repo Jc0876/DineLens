@@ -15,6 +15,7 @@ DineLens Tunnel Manager（多档案版）
   python tunnel.py open           浏览器打开公网地址
   python tunnel.py start-local    启动本地服务（执行 services.json 里的 start_cmd）
   python tunnel.py stop-local     停止监听当前档案端口的本地服务
+  python tunnel.py deploy         部署前端：提交并推送仓库（Pages 自动构建，--dry-run 仅预览）
   python tunnel.py profiles       列出隧道档案
   python tunnel.py use <档案名>    切换隧道档案
   python tunnel.py login          登录/切换 Cloudflare 账号（浏览器授权）
@@ -41,6 +42,7 @@ BASE = Path(__file__).resolve().parent
 PROFILE_FILE = BASE / "tunnels.json"
 SERVICES_FILE = BASE / "services.json"
 STATE_FILE = BASE / "tunnel_state.json"
+DEPLOY_FILE = BASE / "deploy.json"
 LOG_FILE = BASE / "tunnel.log"
 CONFIGS_DIR = BASE / "configs"
 
@@ -51,6 +53,15 @@ DEFAULT_SERVICES = [
 ]
 
 DEFAULT_STATE = {"last_pid": None, "local_pid": None}
+
+DEFAULT_DEPLOY = {
+    "repo_dir": str(BASE.parent),
+    "web_dir": "web",
+    "branch": "main",
+    "pages_project": "dinelens",
+    "pages_url": "",
+    "mode": "git",
+}
 
 DETACHED = 0x00000008
 NEW_GROUP = 0x00000200
@@ -164,6 +175,18 @@ def load_services():
         services = json.loads(json.dumps(DEFAULT_SERVICES))
         save_json(SERVICES_FILE, services)
     return services
+
+
+def load_deploy():
+    cfg = load_json(DEPLOY_FILE)
+    if cfg is None:
+        cfg = json.loads(json.dumps(DEFAULT_DEPLOY))
+        save_json(DEPLOY_FILE, cfg)
+    return cfg
+
+
+def save_deploy(cfg):
+    save_json(DEPLOY_FILE, cfg)
 
 
 def generate_config(name=None, profile=None):
@@ -293,6 +316,82 @@ def stop_local_service(port=None):
         print(f"已停止本地服务: PID {pid} ({name})")
     state["local_pid"] = None
     save_state(state)
+    return True
+
+
+def _git(args, cwd, timeout=180):
+    try:
+        return subprocess.run(
+            ["git"] + args, cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+            creationflags=NO_WINDOW if os.name == "nt" else 0,
+        )
+    except Exception:
+        return None
+
+
+def deploy_frontend(dry_run=False, message=None):
+    cfg = load_deploy()
+    repo = Path(cfg.get("repo_dir") or BASE.parent)
+    web = Path(cfg.get("web_dir") or "web")
+    if not web.is_absolute():
+        web = repo / web
+    if not (repo / ".git").exists():
+        print(f"不是 git 仓库: {repo}")
+        return False
+    if not web.exists():
+        print(f"找不到前端目录: {web}")
+        return False
+
+    status = _git(["status", "--porcelain"], repo)
+    if status is None:
+        print("无法执行 git，请确认已安装 Git 并加入 PATH")
+        return False
+    changes = [line for line in status.stdout.splitlines() if line.strip()]
+
+    ahead = 0
+    rev = _git(["rev-list", "--count", "@{u}..HEAD"], repo)
+    if rev is not None and rev.returncode == 0 and rev.stdout.strip().isdigit():
+        ahead = int(rev.stdout.strip())
+
+    print(f"仓库: {repo}")
+    print(f"前端目录: {web}")
+    print(f"未提交改动: {len(changes)} 处 | 未推送提交: {ahead} 个")
+    for line in changes[:20]:
+        print("   ", line)
+
+    if not changes and ahead == 0:
+        print("没有需要部署的内容（工作区干净且已与远端同步）")
+        return True
+
+    if dry_run:
+        print("dry-run: 以上是将要提交/推送的内容，未做任何改动")
+        return True
+
+    if changes:
+        add = _git(["add", "-A"], repo)
+        if add is None or add.returncode != 0:
+            print("git add 失败")
+            return False
+        msg = message or f"Deploy frontend: update web ({time.strftime('%Y-%m-%d %H:%M:%S')})"
+        commit = _git(["commit", "-m", msg], repo)
+        if commit is None or commit.returncode != 0:
+            err = ((commit.stderr or "") if commit else "").strip()
+            print(err[:300] or "git commit 失败")
+            return False
+        print(f"已提交: {msg}")
+
+    push = _git(["push"], repo, timeout=300)
+    if push is None or push.returncode != 0:
+        err = (((push.stderr or "") + (push.stdout or "")) if push else "").strip()
+        print(err[:400])
+        print("git push 失败。首次使用可能需要在命令行手动 push 一次完成 GitHub 登录。")
+        return False
+
+    print("已推送，Cloudflare Pages 会在约 1 分钟内自动构建并发布。")
+    url = (cfg.get("pages_url") or "").strip()
+    if url:
+        print(f"前端地址: {url}")
     return True
 
 
@@ -802,6 +901,8 @@ def main():
             print("services.json 里没有配置 start_cmd 的服务")
     elif cmd == "stop-local":
         stop_local_service()
+    elif cmd == "deploy":
+        deploy_frontend(dry_run="--dry-run" in args)
     elif cmd == "profiles":
         list_profiles()
     elif cmd == "use" and len(args) > 1:

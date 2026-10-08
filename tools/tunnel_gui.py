@@ -53,8 +53,8 @@ class TunnelApp:
 
     def build(self):
         self.root.title("DineLens Tunnel Manager")
-        self.root.geometry("820x780")
-        self.root.minsize(760, 700)
+        self.root.geometry("820x860")
+        self.root.minsize(760, 800)
         self.root.configure(bg=BG)
 
         header = tk.Frame(self.root, bg=BG)
@@ -155,9 +155,20 @@ class TunnelApp:
         tk.Button(settings, text="保存设置", command=self.on_save_settings,
                   font="{Microsoft YaHei UI} 9").pack(side="right")
 
+        deploy_frame = tk.LabelFrame(self.root, text=" 前端部署（Cloudflare Pages） ", bg=BG, padx=10, pady=8)
+        deploy_frame.pack(fill="x", padx=14, pady=6)
+        self.deploy_label = tk.Label(deploy_frame, text="加载中...", bg=BG, fg=COLOR_MUTED,
+                                     font="{Microsoft YaHei UI} 9", anchor="w")
+        self.deploy_label.pack(side="left", fill="x", expand=True)
+        tk.Button(deploy_frame, text="打开前端地址", command=self.on_open_frontend,
+                  font="{Microsoft YaHei UI} 9").pack(side="right")
+        tk.Button(deploy_frame, text="部署前端", command=self.on_deploy,
+                  font="{Microsoft YaHei UI} 9").pack(side="right", padx=6)
+        self.update_deploy_label()
+
         log_frame = tk.LabelFrame(self.root, text=" 隧道日志 ", bg=BG, padx=10, pady=8)
         log_frame.pack(fill="both", expand=True, padx=14, pady=(6, 12))
-        self.log_box = ScrolledText(log_frame, height=9, state="disabled",
+        self.log_box = ScrolledText(log_frame, height=8, state="disabled",
                                     font=("Consolas", 9), bg="#ffffff")
         self.log_box.pack(fill="both", expand=True)
         bar = tk.Frame(log_frame, bg=BG)
@@ -408,6 +419,34 @@ class TunnelApp:
             self.on_restart()
         else:
             self.set_status("设置已保存")
+
+    def update_deploy_label(self):
+        cfg = core.load_deploy()
+        url = (cfg.get("pages_url") or "").strip() or "未配置（部署后到 Pages 后台绑定域名）"
+        self.deploy_label.config(text=f"方式: git 推送自动部署（Pages 构建 web/）  地址: {url}")
+
+    def on_deploy(self):
+        if self.busy:
+            return
+        if not messagebox.askyesno("部署前端",
+                                   "将把仓库的改动提交并推送到 GitHub，\nCloudflare Pages 会自动构建发布 web/。\n\n继续吗？"):
+            return
+        self.set_busy(True, "部署中（提交并推送）...")
+        def done(result, error):
+            self.set_busy(False, "前端已推送，Pages 构建中" if result else "部署失败，看日志")
+            self.update_deploy_label()
+            if result:
+                messagebox.showinfo("部署前端", "已推送。Cloudflare Pages 通常 1 分钟内完成构建。")
+        self.bg(lambda: core.deploy_frontend(), done)
+
+    def on_open_frontend(self):
+        cfg = core.load_deploy()
+        url = (cfg.get("pages_url") or "").strip()
+        if not url:
+            messagebox.showwarning("打开前端地址", "还没有配置前端地址（tools/deploy.json 的 pages_url）")
+            return
+        webbrowser.open(url)
+        self.set_status(f"已打开 {url}")
 
     def on_use_profile(self):
         name = self.profile_combo.get()

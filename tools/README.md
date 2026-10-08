@@ -11,6 +11,7 @@ Two entry points:
 | `启动 Tunnel 管理器.bat` | Local launcher for the GUI (personal file, not committed) |
 | `tunnels.example.json` | Tunnel profile template (copy to `tunnels.json` and edit) |
 | `services.example.json` | Local service list template (copy to `services.json` and edit) |
+| `deploy.example.json` | Frontend deploy settings template (copy to `deploy.json` and edit) |
 
 ## 1. How It Works
 
@@ -103,6 +104,7 @@ Real account credentials (`cert.pem`, `<tunnel-id>.json`) are created by `cloudf
 | Tunnel profiles (accounts) | switch profile, log in to an account, create a tunnel, route DNS |
 | Local service | pick a preset service or type a custom port and click switch to point the tunnel at it; the preset start command is shown below; **Start local service / Stop local service** buttons run that command or stop the process listening on the port |
 | Tunnel settings | edge IP version (auto / IPv4 / IPv6); takes effect after a restart |
+| Frontend deploy | one click commits and pushes the repository; Cloudflare Pages (connected to the repo) builds the `web/` folder automatically; shows and opens the Pages address |
 | Log area | live view of `tunnel.log`, auto-refresh toggle |
 
 ## 5. Command Line Usage
@@ -120,6 +122,7 @@ python tunnel.py watch           :: guard mode (auto reconnect)
 python tunnel.py open            :: open the public URL in a browser
 python tunnel.py start-local     :: start the local service using the preset start_cmd
 python tunnel.py stop-local      :: stop the process listening on the active profile's port
+python tunnel.py deploy          :: commit & push the repo (Pages auto-deploys); add --dry-run to preview
 
 python tunnel.py profiles        :: list tunnel profiles
 python tunnel.py use <name>      :: switch the active profile
@@ -140,7 +143,25 @@ python tunnel.py route-dns <name> <domain>       :: add a DNS route to a tunnel
 
 On a fresh clone: copy `tunnels.example.json` / `services.example.json` to the real filenames and edit them, or simply follow the login + create flow in section 3.
 
-## 7. FAQ
+## 7. Frontend Deployment (Cloudflare Pages)
+
+The `web/` folder of this repository is published by **Cloudflare Pages**. Visitors only
+reach the Pages domain; `/api/*` requests are proxied inside Cloudflare to the tunnel
+backend (see `web/README.md`). This keeps a single origin (no CORS) and keeps the tunnel
+hostname invisible to visitors' networks.
+
+One-time setup in the Cloudflare dashboard:
+
+1. Workers & Pages → Create → Pages → Connect to Git → select this repository;
+2. Build command: *(empty)*; **Build output directory: `web`**;
+3. Deploy, then add your subdomain under **Custom domains**.
+
+Afterwards, publishing is one click: **Deploy frontend** in the GUI (or
+`python tunnel.py deploy`) commits and pushes the repository, and Pages rebuilds
+automatically. Copy `deploy.example.json` to `deploy.json` and set `pages_url` to your
+Pages address; use `--dry-run` to preview what would be committed.
+
+## 8. FAQ
 
 **1. Public URL returns 502**
 The local service is not listening on the profile's port. Check the "local service" row on the status panel — it should say listening.
